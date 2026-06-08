@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+build/
+dist/
+*.pyc
+app_stderr.log
+app_stdout.log
+*.db-journal
+prepmate_error.log
+nuitka_build/
