@@ -4389,13 +4389,13 @@ class MainWindow(QWidget):
         backup_row2 = QHBoxLayout()
         backup_row2.setSpacing(4)
         
-        upgrade_btn = QPushButton("Upgrade App...")
-        upgrade_btn.clicked.connect(self.upgrade_app)
+        self.upgrade_btn = QPushButton("Upgrade App...")
+        self.upgrade_btn.clicked.connect(self.upgrade_app)
         
         reset_btn = QPushButton("Reset...")
         reset_btn.clicked.connect(self.show_reset_options_dialog)
         
-        backup_row2.addWidget(upgrade_btn)
+        backup_row2.addWidget(self.upgrade_btn)
         backup_row2.addWidget(reset_btn)
         backup_row2.addStretch()
         sec3_layout.addLayout(backup_row2)
@@ -6508,62 +6508,7 @@ class MainWindow(QWidget):
             return None
 
     def upgrade_app(self):
-        base_dir = get_database_path().parent
-        upgrade_dir = base_dir / "upgrade"
-        upgrade_dir.mkdir(parents=True, exist_ok=True)
-        QMessageBox.information(
-            self,
-            "Upgrade Instructions",
-            "Please copy the new version of PrepMate (e.g., PrepMate.exe) into the 'upgrade' folder, "
-            "then select it in the file dialog."
-        )
-        selected_file, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select New Executable / Script",
-            str(upgrade_dir),
-            "Executables (*.exe);;Python Scripts (*.py);;All Files (*)"
-        )
-        if not selected_file:
-            return
-        selected_path = Path(selected_file).resolve()
-        snapshot_file = self.save_snapshot()
-        if not snapshot_file:
-            QMessageBox.critical(self, "Upgrade Aborted", "Could not create snapshot backup before upgrade. Upgrade aborted.")
-            return
-        is_frozen = getattr(sys, "frozen", False)
-        current_exe = Path(sys.executable).resolve() if is_frozen else Path(sys.argv[0]).resolve()
-        bat_path = base_dir / "upgrade_helper.bat"
-        bat_content = f"""@echo off
-echo Upgrading PrepMate...
-echo Waiting for application to close...
-timeout /t 3 /nobreak > NUL
-
-copy /Y "{selected_path}" "{current_exe}"
-
-if %ERRORLEVEL% NEQ 0 (
-    echo Error: Failed to overwrite the application files.
-    echo Please ensure the app is closed and try running this batch script as Administrator.
-    pause
-    exit /b %ERRORLEVEL%
-)
-
-echo Upgrade successful! Restarting...
-start "" "{current_exe}"
-
-(goto) 2>nul & del "%~f0"
-"""
-        try:
-            with bat_path.open("w", encoding="utf-8") as f:
-                f.write(bat_content)
-            import subprocess
-            subprocess.Popen(
-                ["cmd.exe", "/c", str(bat_path)],
-                cwd=str(base_dir),
-                creationflags=subprocess.CREATE_NEW_CONSOLE
-            )
-            QApplication.quit()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to start upgrade: {str(e)}")
+        self.start_update_check(self.upgrade_btn)
 
     def open_subject_manager(self):
         dialog = SubjectManagerDialog(self)
@@ -6765,21 +6710,25 @@ start "" "{current_exe}"
         for card in self.canvas.findChildren(AeroCard):
             card.apply_card_theme()
  
-    def trigger_update_check(self):
-        self.check_updates_btn.setEnabled(False)
-        self.check_updates_btn.setText("Checking...")
+    def start_update_check(self, button_widget=None):
+        self._current_update_btn = button_widget
+        if button_widget:
+            button_widget.setEnabled(False)
+            button_widget.setText("Checking...")
         
-        username = "RabbDaRadio"
-        repo = "Channel13"
-        
-        thread = threading.Thread(target=self.run_update_check, args=(username, repo))
+        thread = threading.Thread(target=self.run_update_check)
         thread.daemon = True
         thread.start()
 
-    def run_update_check(self, username, repo):
+    def trigger_update_check(self):
+        self.start_update_check(self.check_updates_btn)
+
+    def run_update_check(self):
         import urllib.request
         import json
         
+        username = "RabbDaRadio"
+        repo = "Channel13"
         api_url = f"https://api.github.com/repos/{username}/{repo}/releases/latest"
         req = urllib.request.Request(
             api_url, 
@@ -6818,8 +6767,12 @@ start "" "{current_exe}"
             return False
 
     def prompt_for_update(self, new_version, zip_url, body):
-        self.check_updates_btn.setEnabled(True)
-        self.check_updates_btn.setText("Check for Updates")
+        if hasattr(self, "_current_update_btn") and self._current_update_btn:
+            self._current_update_btn.setEnabled(True)
+            if self._current_update_btn == getattr(self, "upgrade_btn", None):
+                self._current_update_btn.setText("Upgrade App...")
+            else:
+                self._current_update_btn.setText("Check for Updates")
         
         dialog = QDialog(self)
         dialog.setWindowTitle("New Version Available!")
@@ -7066,8 +7019,12 @@ Remove-Item -Path $MyInvocation.MyCommand.Path -Force
         QApplication.quit()
 
     def show_update_message(self, title, msg):
-        self.check_updates_btn.setEnabled(True)
-        self.check_updates_btn.setText("Check for Updates")
+        if hasattr(self, "_current_update_btn") and self._current_update_btn:
+            self._current_update_btn.setEnabled(True)
+            if self._current_update_btn == getattr(self, "upgrade_btn", None):
+                self._current_update_btn.setText("Upgrade App...")
+            else:
+                self._current_update_btn.setText("Check for Updates")
         QMessageBox.information(self, title, msg)
 
     def save_current_notes(self):
